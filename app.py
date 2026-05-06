@@ -3,28 +3,21 @@ from db import get_connection
 import re
 
 app = Flask(__name__)
-app.secret_key = "secret123" 
+app.secret_key = "secret123"
 
 # -------------------------------
-# Email Validation Function
+# Email Validation Function 
 # -------------------------------
 def is_valid_email(email):
-    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
     return re.match(pattern, email)
 
 # -------------------------------
-# HOME (Read all contacts)
+# Phone Validation Function 
 # -------------------------------
-@app.route('/')
-def index():
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("SELECT * FROM contacts")
-    contacts = cursor.fetchall()
-
-    conn.close()
-    return render_template('index.html', contacts=contacts)
+def is_valid_phone(phone):
+    pattern = r'^[0-9]{10}$'
+    return re.match(pattern, phone)
 
 # -------------------------------
 # ADD CONTACT (Create)
@@ -42,21 +35,28 @@ def add():
         flash("First Name, Email and Phone are required!", "danger")
         return redirect('/')
 
-    # Email format validation
+    # Email validation
     if not is_valid_email(email):
         flash("Invalid Email Format!", "danger")
+        return redirect('/')
+
+    # Phone validation
+    if not is_valid_phone(phone):
+        flash("Phone must be exactly 10 digits!", "danger")
         return redirect('/')
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Duplicate email check
-    cursor.execute("SELECT * FROM contacts WHERE email=%s", (email,))
-    existing = cursor.fetchone()
+    # Duplicate FULL record check 
+    cursor.execute("""
+        SELECT * FROM contacts 
+        WHERE first=%s AND last=%s AND phone=%s AND email=%s
+    """, (first, last, phone, email))
 
-    if existing:
+    if cursor.fetchone():
         conn.close()
-        flash("Email already exists!", "danger")
+        flash("Duplicate contact not allowed!", "danger")
         return redirect('/')
 
     # Insert data
@@ -71,6 +71,21 @@ def add():
     return redirect('/')
 
 # -------------------------------
+# HOME (Read all contacts)
+# -------------------------------
+@app.route('/')
+def index():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT * FROM contacts")
+    contacts = cursor.fetchall()
+
+    conn.close()
+    return render_template('index.html', contacts=contacts)
+
+
+# -------------------------------
 # DELETE CONTACT
 # -------------------------------
 @app.route('/delete/<int:id>')
@@ -82,10 +97,11 @@ def delete(id):
     conn.commit()
     conn.close()
 
+    flash("Contact deleted successfully!", "success")
     return redirect('/')
 
 # -------------------------------
-# EDIT PAGE (Fetch One Contact)
+# EDIT PAGE
 # -------------------------------
 @app.route('/edit/<int:id>')
 def edit(id):
@@ -111,27 +127,34 @@ def update(id):
 
     # Required validation
     if not first or not email or not phone:
-        return "Required fields missing!"
+        flash("Required fields missing!", "danger")
+        return redirect('/')
 
-    # Email format validation
+    # Email validation
     if not is_valid_email(email):
-        return "Invalid Email Format!"
+        flash("Invalid Email Format!", "danger")
+        return redirect('/')
+
+    # Phone validation
+    if not is_valid_phone(phone):
+        flash("Phone must be exactly 10 digits!", "danger")
+        return redirect('/')
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Duplicate check (excluding current record)
+    # Duplicate check 
     cursor.execute(
         "SELECT * FROM contacts WHERE email=%s AND id!=%s",
         (email, id)
     )
-    existing = cursor.fetchone()
 
-    if existing:
+    if cursor.fetchone():
         conn.close()
-        return "Email already used by another contact!"
+        flash("Email already used by another contact!", "danger")
+        return redirect('/')
 
-    # Update Data
+    # Update data
     cursor.execute(
         "UPDATE contacts SET first=%s, last=%s, address=%s, email=%s, phone=%s WHERE id=%s",
         (first, last, address, email, phone, id)
@@ -139,6 +162,7 @@ def update(id):
     conn.commit()
     conn.close()
 
+    flash("Contact updated successfully!", "success")
     return redirect('/')
 
 # -------------------------------
